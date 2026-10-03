@@ -1,8 +1,29 @@
-# Structure-only stub; runtime definitions will be added in later phases.
 # chaos-tool is a manual CLI outside Compose.
 services:
-  gateway: {}
-  user-service: {}
-  order-service: {}
-  prometheus: {}
-  grafana: {}
+  gateway:
+    build: ./gateway
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - app
+
+  user-service:
+    build: ./user-service
+    ports:
+      - "127.0.0.1:3001:3000"
+    networks:
+      - app
+
+  order-service:
+    build: ./order-service
+    ports:
+      - "127.0.0.1:3002:3000"
+    networks:
+      - app
+
+  # prometheus: runtime definition deferred to Phase 3.
+  # grafana: runtime definition deferred to Phase 3.
+
+networks:
+  app:
+    driver: bridge
