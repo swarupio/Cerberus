@@ -10,7 +10,7 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 ## Phase 1 — Service skeletons (no business logic yet)
 - [x] `gateway`: boots, responds on `/health`
 - [x] `user-service`: boots, responds on `/health`
-- [ ] `order-service`: boots, responds on `/health`
+- [x] `order-service`: boots, responds on `/health`
 - [ ] All three start together via `docker compose up` on a shared network
 
 ## Phase 2 — Minimal real functionality + inter-service calls
@@ -51,3 +51,4 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 2026-10-03: Gateway health skeleton implemented with Node.js built-in HTTP and standalone Dockerfile; syntax check passed, but Docker engine was unavailable and Desktop startup failed with access denied, so container/curl verification is pending and the gateway task remains unchecked.
 2026-10-03: Phase 1 gateway verified via standalone docker build/run; startup log confirmed port 3000 and curl http://127.0.0.1:3000/health returned HTTP 200 with {"status":"ok"}; no Compose or downstream-service changes.
 2026-10-03: Phase 1 user-service implemented with Node.js built-in HTTP and verified via standalone docker build/run; startup log confirmed port 3000 and curl http://127.0.0.1:3001/health returned HTTP 200 with {"status":"ok"}.
+2026-10-03: Phase 1 order-service implemented with Node.js built-in HTTP and verified via standalone docker build/run; startup log confirmed port 3000 and curl http://127.0.0.1:3002/health returned HTTP 200 with {"status":"ok"}.

@@ -1,1 +1,8 @@
-# Placeholder: order-service container definition will be added in Phase 1.
+FROM node:24-alpine
+
+WORKDIR /app
+COPY package.json server.js ./
+
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]
