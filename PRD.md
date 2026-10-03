@@ -1,6 +1,6 @@
-# PRD — [PROJECT NAME] : Chaos Engineering & Observability Platform
+# PRD — Cerberus : Chaos Engineering & Observability Platform
 
-> Replace `[PROJECT NAME]` everywhere before committing. See naming suggestions in the accompanying message.
+> Replace `Cerberus` everywhere before committing. See naming suggestions in the accompanying message.
 
 ## 1. Problem Statement
 
@@ -59,12 +59,12 @@ Most student cloud projects only demonstrate the happy path. Real distributed sy
 
 ## 6. Tech Stack
 
-- Services: pick ONE language/framework the team already knows (e.g. Node/Express or Python/Flask) — do not mix languages across services unless there's a specific learning reason to.
+- Services: Node.js for gateway, user-service, and order-service, with a separate package.json per service. Framework selection is deferred.
 - Orchestration: Docker + Docker Compose.
-- Metrics: `prom-client` (Node) or `prometheus_client` (Python).
-- Circuit breaker: `opossum` (Node) or `pybreaker` (Python) — or a small hand-rolled implementation if the team wants the extra learning (recommended if time allows; it's not complex).
+- Metrics: `prom-client` (Node.js), to be approved before adding the dependency.
+- Circuit breaker: `opossum` (Node.js) or a small hand-rolled implementation if the team wants the extra learning (recommended if time allows; it's not complex). Any dependency must be approved before adding it.
 - Monitoring: Prometheus + Grafana, both official Docker images.
-- Chaos tool: a script using the Docker SDK for your chosen language, or shelling out to the `docker` CLI.
+- Chaos tool: a manual Node.js CLI outside Compose, acting on the Docker socket through a Docker SDK or the `docker` CLI, with its own package.json.
 
 ## 7. Architecture (reference)
 

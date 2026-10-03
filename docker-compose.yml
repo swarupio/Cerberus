@@ -1,0 +1,8 @@
+# Structure-only stub; runtime definitions will be added in later phases.
+# chaos-tool is a manual CLI outside Compose.
+services:
+  gateway: {}
+  user-service: {}
+  order-service: {}
+  prometheus: {}
+  grafana: {}

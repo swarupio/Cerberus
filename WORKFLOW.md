@@ -5,7 +5,7 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 ## Phase 0 — Repo & scaffold
 - [ ] GitHub repo created, cloned locally
 - [ ] `PRD.md`, `AGENTS.md`, `WORKFLOW.md` committed at root
-- [ ] Folder structure scaffolded (empty service folders + root `docker-compose.yml` stub)
+- [x] Folder structure scaffolded (empty service folders + root `docker-compose.yml` stub)
 
 ## Phase 1 — Service skeletons (no business logic yet)
 - [ ] `gateway`: boots, responds on `/health`
@@ -47,3 +47,4 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 ## Notes log
 <!-- Add one line per completed task here, e.g.: -->
 <!-- 2026-10-05: Phase 1 gateway skeleton done, health endpoint verified via curl -->
+2026-10-03: Scaffolded placeholder Dockerfiles and empty Node.js manifests, README, and five-service Compose stub; verified folder tree, manifest JSON, and exact service names without starting Phase 1.
