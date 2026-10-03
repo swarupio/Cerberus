@@ -1,0 +1,90 @@
+# PRD — [PROJECT NAME] : Chaos Engineering & Observability Platform
+
+> Replace `[PROJECT NAME]` everywhere before committing. See naming suggestions in the accompanying message.
+
+## 1. Problem Statement
+
+Most student cloud projects only demonstrate the happy path. Real distributed systems fail constantly — services crash, networks slow down, dependencies go dark — and mature engineering orgs design for this reality rather than hoping it doesn't happen. This project builds a small, deliberately-breakable distributed system, instruments it for observability, injects controlled failure into it (chaos engineering), and implements a resilience pattern (circuit breaker) so the system degrades gracefully and recovers on its own — live, in front of evaluators.
+
+## 2. Goals
+
+- A working multi-service system running locally via Docker Compose.
+- Real-time observability of that system via Prometheus + Grafana.
+- A custom chaos tool that injects failure (kill a service, add latency) on demand or on a timer.
+- At least one resilience pattern (circuit breaker) implemented and demonstrably working — i.e., visible in the dashboard when it trips and recovers.
+- A reproducible, documented live demo: healthy state → inject chaos → observe degradation → observe recovery.
+
+## 3. Non-Goals (explicitly out of scope for the core deliverable)
+
+- Kubernetes — Docker Compose only. (Mention as "future work" in the report, do not implement.)
+- Multi-cloud or production cloud deployment — local Docker Compose is the primary deliverable. Cloud deployment (single provider, e.g. AWS free tier) is a **stretch goal only**, attempted after the core is fully working, never before.
+- More than 4 services.
+- More than one resilience pattern implemented deeply (a shallow second pattern is acceptable if time allows, but circuit breaker must work well first).
+- Authentication/authorization, payments, or any business-logic complexity — the services exist to demonstrate failure/recovery, not to be a real product.
+
+## 4. System Components
+
+| Component | Responsibility |
+|---|---|
+| `gateway` | Entry point. Receives requests, calls `user-service` and `order-service`. Implements the circuit breaker around at least one of these calls. |
+| `user-service` | Minimal service with its own in-memory or lightweight DB (e.g. SQLite/Postgres container). Exposes a health endpoint and a `/metrics` endpoint. |
+| `order-service` | Same shape as `user-service`, different fake domain (orders/products). Exists mainly to give the gateway a second downstream dependency. |
+| `chaos-tool` | A standalone script/service (not part of the "real" app) that, on a timer or via manual trigger, kills, restarts, or throttles one of the above containers using the Docker SDK/CLI. |
+| `prometheus` | Scrapes `/metrics` from gateway, user-service, order-service on an interval. |
+| `grafana` | Visualizes Prometheus data on live dashboards: request rate, error rate, service up/down, circuit breaker state if exposed as a metric. |
+
+## 5. Functional Requirements
+
+**Gateway**
+- Exposes a simple REST endpoint that triggers a call to `user-service` and/or `order-service`.
+- Exposes `/metrics` in Prometheus format (request count, latency, error count).
+- Exposes `/health`.
+- Implements a circuit breaker around the call to at least one downstream service: tracks failures, opens the circuit after N consecutive failures, returns a fast fallback response while open, attempts a half-open retry after a cooldown.
+- Circuit breaker state (closed/open/half-open) must be exposed as a metric so it's visible on the Grafana dashboard.
+
+**user-service / order-service**
+- Each exposes at least one meaningful endpoint and a `/metrics` + `/health` endpoint.
+- Each must be independently killable without crashing the gateway process itself (gateway should handle the error, not crash).
+
+**chaos-tool**
+- Can list running containers belonging to this project.
+- Can kill/stop a randomly chosen target container.
+- Can optionally restart it after a delay (so the demo shows recovery, not permanent death).
+- Runs as either a manual CLI command (`run chaos now`) or an optional timer loop — manual trigger first, timer loop only once that's solid.
+- Must not touch `prometheus` or `grafana` containers (it attacks the *application*, not the *monitoring*).
+
+**Observability**
+- `prometheus.yml` scrape config targets all three app services.
+- Grafana has at least one dashboard, provisioned (not manually clicked together each time), showing: per-service up/down, request rate, error rate, circuit breaker state.
+
+## 6. Tech Stack
+
+- Services: pick ONE language/framework the team already knows (e.g. Node/Express or Python/Flask) — do not mix languages across services unless there's a specific learning reason to.
+- Orchestration: Docker + Docker Compose.
+- Metrics: `prom-client` (Node) or `prometheus_client` (Python).
+- Circuit breaker: `opossum` (Node) or `pybreaker` (Python) — or a small hand-rolled implementation if the team wants the extra learning (recommended if time allows; it's not complex).
+- Monitoring: Prometheus + Grafana, both official Docker images.
+- Chaos tool: a script using the Docker SDK for your chosen language, or shelling out to the `docker` CLI.
+
+## 7. Architecture (reference)
+
+```
+chaos-tool ──(kills/restarts)──▶ [gateway | user-service | order-service]
+gateway ──(circuit breaker)────▶ user-service, order-service
+all three services ──(expose /metrics)──▶ prometheus ──(datasource)──▶ grafana
+```
+
+## 8. Success Criteria / Definition of Done
+
+- `docker compose up` brings up all 5 containers (gateway, user-service, order-service, prometheus, grafana) cleanly with one command.
+- Grafana dashboard loads automatically via provisioning (no manual setup needed after `up`) and shows live data.
+- Running the chaos tool against `user-service` visibly shows it going down in Grafana, the gateway's circuit breaker tripping (visible as a metric/log), and both recovering once the service restarts — without anyone restarting Docker Compose itself.
+- A `README.md` documents: architecture, how to run it, how to run the chaos demo, and what each team member built.
+
+## 9. Team & Ownership
+
+Fill in once roles are assigned (see WORKFLOW.md for suggested split):
+- Gateway + circuit breaker:
+- user-service:
+- order-service:
+- Observability (Prometheus/Grafana) + chaos-tool:
