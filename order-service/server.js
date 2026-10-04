@@ -9,6 +9,15 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (request.method === 'GET' && request.url === '/orders') {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ orders: [
+      { id: 101, userId: 1, item: 'Notebook' },
+      { id: 102, userId: 2, item: 'Pen' },
+    ] }));
+    return;
+  }
+
   response.writeHead(404, { 'Content-Type': 'application/json' });
   response.end(JSON.stringify({ error: 'Not found' }));
 });

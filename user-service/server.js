@@ -9,6 +9,15 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (request.method === 'GET' && request.url === '/users') {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ users: [
+      { id: 1, name: 'Alex' },
+      { id: 2, name: 'Sam' },
+    ] }));
+    return;
+  }
+
   response.writeHead(404, { 'Content-Type': 'application/json' });
   response.end(JSON.stringify({ error: 'Not found' }));
 });
