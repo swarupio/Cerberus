@@ -32,9 +32,9 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 - [x] Verified: manually killing the downstream service trips the breaker (visible in dashboard/logs), and it closes again once the service is back
 
 ## Phase 5 — Chaos tool
-- [ ] Chaos tool can list the project's running containers
-- [ ] Chaos tool can kill a target container on command
-- [ ] Chaos tool can restart it after a delay
+- [x] Chaos tool can list the project's running containers
+- [x] Chaos tool can kill a target container on command
+- [x] Chaos tool can restart it after a delay
 - [ ] Full demo run end-to-end: healthy → chaos triggered → dashboard shows degradation → circuit breaker trips → service restarts → dashboard shows recovery
 - [ ] Demo run documented in `README.md` (steps + what to expect, maybe a screenshot or two)
 
@@ -58,3 +58,4 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 2026-10-04: Phase 3 Prometheus added with official prom/prometheus:v3.13.4, read-only observability/prometheus.yml, persistent data volume and localhost port 9090; docker compose up --build --detach succeeded, /api/v1/targets reported gateway/user-service/order-service health=up with empty lastError, and the up query returned 1 for each; Grafana remains pending.
 2026-10-04: Phase 3 Grafana added on localhost:3003 with persistent storage, anonymous Viewer access and file-provisioned Prometheus datasource/Cerberus Overview dashboard; Compose build/start and Grafana recreation verified startup provisioning, /api/ds/query returned all three services UP plus real request/error/latency samples after success/404 test traffic, and /d/cerberus-overview/cerberus-overview returned HTTP 200; circuit-breaker metrics remain Phase 4.
 2026-10-04: Phase 4 verified with approved opossum 10.0.0 on gateway → user-service, 3-consecutive-failure trip and 30s cooldown: Compose rebuild/start passed; stopping user-service produced closed→open metrics on the third failure and a 3.4ms HTTP 503 fallback, /orders and /health stayed HTTP 200, restart/probe produced half_open→closed metrics and HTTP 200 /users; logs and Grafana /api/ds/query confirmed open=1/half-open=2/closed=0 timeline values; all services left running.
+2026-10-04: Phase 5 manual Node.js/Docker CLI implemented without dependencies: project/directory/service allowlist checks, list, exact-name/service-name kill and configurable restart delay; 5 tests passed, live Prometheus/Grafana target attempts were rejected, and kill cerberus-user-service-1 --restart-after 10 logged exited/137 then running/true after 10s; user health and gateway /users returned HTTP 200 afterward, monitoring stayed running; full dashboard demo remains pending.
