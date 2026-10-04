@@ -20,8 +20,8 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 
 ## Phase 3 — Observability
 - [x] Each service exposes `/metrics` in Prometheus format
-- [ ] `prometheus.yml` scrape config targets all three services
-- [ ] `prometheus` container added to compose, confirmed all targets show "UP"
+- [x] `prometheus.yml` scrape config targets all three services
+- [x] `prometheus` container added to compose, confirmed all targets show "UP"
 - [ ] `grafana` container added to compose, Prometheus datasource provisioned automatically
 - [ ] At least one dashboard provisioned automatically, showing live request/error data
 
@@ -55,3 +55,4 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 2026-10-04: Phase 1 complete: docker compose up --build --detach built and started all three services on cerberus_app; startup logs and running state confirmed, terminal curl returned HTTP 200 from all three /health endpoints, and gateway reached both downstream services by name.
 2026-10-04: Phase 2 verified with docker compose up --build --detach gateway user-service order-service: direct and gateway GET /users and /orders returned HTTP 200 with sample data; docker compose stop user-service caused gateway GET /users to return HTTP 502 with {"error":"Downstream service unavailable","service":"user-service"}, while gateway remained running and /health and /orders returned HTTP 200; user-service left stopped.
 2026-10-04: Phase 3 metrics endpoints added to all three app services with approved prom-client 15.1.3, completed-request counters and latency histograms labeled by service/method/route/status; Compose rebuild/start, raw curl HTTP 200 metrics output, health/business routes, and counter/histogram increments verified; Prometheus and Grafana remain pending.
+2026-10-04: Phase 3 Prometheus added with official prom/prometheus:v3.13.4, read-only observability/prometheus.yml, persistent data volume and localhost port 9090; docker compose up --build --detach succeeded, /api/v1/targets reported gateway/user-service/order-service health=up with empty lastError, and the up query returned 1 for each; Grafana remains pending.
