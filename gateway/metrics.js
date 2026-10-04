@@ -1,4 +1,4 @@
-const { Registry, Counter, Histogram } = require('prom-client');
+const { Registry, Counter, Histogram, Gauge } = require('prom-client');
 
 const registry = new Registry();
 registry.setDefaultLabels({ service: 'gateway' });
@@ -16,6 +16,19 @@ const duration = new Histogram({
   buckets: [0.01, 0.1, 1, 5],
   registers: [registry],
 });
+
+const circuitState = new Gauge({
+  name: 'gateway_circuit_breaker_state',
+  help: 'Current circuit breaker state: 1 for the active state, 0 otherwise.',
+  labelNames: ['downstream', 'state'],
+  registers: [registry],
+});
+
+function setCircuitState(state) {
+  for (const candidate of ['closed', 'open', 'half_open']) {
+    circuitState.set({ downstream: 'user-service', state: candidate }, Number(candidate === state));
+  }
+}
 
 function instrumentRequest(request, response, routes) {
   const start = process.hrtime.bigint();
@@ -45,4 +58,4 @@ async function serveMetrics(response) {
   }
 }
 
-module.exports = { instrumentRequest, serveMetrics };
+module.exports = { instrumentRequest, serveMetrics, setCircuitState };

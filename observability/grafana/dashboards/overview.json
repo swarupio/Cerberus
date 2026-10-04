@@ -2,7 +2,7 @@
   "uid": "cerberus-overview",
   "title": "Cerberus Overview",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": false,
   "timezone": "browser",
   "refresh": "5s",
@@ -14,6 +14,37 @@
     "cerberus"
   ],
   "panels": [
+    {
+      "id": 5,
+      "title": "User-service circuit breaker",
+      "description": "Opens after 3 consecutive failures; waits 30 seconds before a half-open probe. A successful probe closes the circuit.",
+      "type": "state-timeline",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "cerberus-prometheus" },
+      "targets": [{
+        "refId": "A",
+        "expr": "sum(gateway_circuit_breaker_state{downstream=\"user-service\",state=\"open\"}) + 2 * sum(gateway_circuit_breaker_state{downstream=\"user-service\",state=\"half_open\"})",
+        "legendFormat": "user-service",
+        "range": true,
+        "instant": false,
+        "datasource": { "type": "prometheus", "uid": "cerberus-prometheus" }
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [{
+            "type": "value",
+            "options": {
+              "0": { "text": "Closed", "color": "green" },
+              "1": { "text": "Open", "color": "red" },
+              "2": { "text": "Half-open", "color": "yellow" }
+            }
+          }]
+        },
+        "overrides": []
+      },
+      "options": { "mergeValues": true, "showValue": "auto", "alignValue": "center", "rowHeight": 0.9 }
+    },
     {
       "id": 1,
       "title": "Service availability",

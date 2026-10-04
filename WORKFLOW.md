@@ -26,10 +26,10 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 - [x] At least one dashboard provisioned automatically, showing live request/error data
 
 ## Phase 4 — Resilience: circuit breaker
-- [ ] Circuit breaker implemented around gateway → one downstream service call
-- [ ] Circuit breaker state exposed as a metric
-- [ ] Circuit breaker state visible on the Grafana dashboard
-- [ ] Verified: manually killing the downstream service trips the breaker (visible in dashboard/logs), and it closes again once the service is back
+- [x] Circuit breaker implemented around gateway → one downstream service call
+- [x] Circuit breaker state exposed as a metric
+- [x] Circuit breaker state visible on the Grafana dashboard
+- [x] Verified: manually killing the downstream service trips the breaker (visible in dashboard/logs), and it closes again once the service is back
 
 ## Phase 5 — Chaos tool
 - [ ] Chaos tool can list the project's running containers
@@ -57,3 +57,4 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 2026-10-04: Phase 3 metrics endpoints added to all three app services with approved prom-client 15.1.3, completed-request counters and latency histograms labeled by service/method/route/status; Compose rebuild/start, raw curl HTTP 200 metrics output, health/business routes, and counter/histogram increments verified; Prometheus and Grafana remain pending.
 2026-10-04: Phase 3 Prometheus added with official prom/prometheus:v3.13.4, read-only observability/prometheus.yml, persistent data volume and localhost port 9090; docker compose up --build --detach succeeded, /api/v1/targets reported gateway/user-service/order-service health=up with empty lastError, and the up query returned 1 for each; Grafana remains pending.
 2026-10-04: Phase 3 Grafana added on localhost:3003 with persistent storage, anonymous Viewer access and file-provisioned Prometheus datasource/Cerberus Overview dashboard; Compose build/start and Grafana recreation verified startup provisioning, /api/ds/query returned all three services UP plus real request/error/latency samples after success/404 test traffic, and /d/cerberus-overview/cerberus-overview returned HTTP 200; circuit-breaker metrics remain Phase 4.
+2026-10-04: Phase 4 verified with approved opossum 10.0.0 on gateway → user-service, 3-consecutive-failure trip and 30s cooldown: Compose rebuild/start passed; stopping user-service produced closed→open metrics on the third failure and a 3.4ms HTTP 503 fallback, /orders and /health stayed HTTP 200, restart/probe produced half_open→closed metrics and HTTP 200 /users; logs and Grafana /api/ds/query confirmed open=1/half-open=2/closed=0 timeline values; all services left running.
