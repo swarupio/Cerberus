@@ -19,7 +19,7 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 - [x] Verified: killing `user-service` manually causes a handled error in `gateway`, not a crash
 
 ## Phase 3 — Observability
-- [ ] Each service exposes `/metrics` in Prometheus format
+- [x] Each service exposes `/metrics` in Prometheus format
 - [ ] `prometheus.yml` scrape config targets all three services
 - [ ] `prometheus` container added to compose, confirmed all targets show "UP"
 - [ ] `grafana` container added to compose, Prometheus datasource provisioned automatically
@@ -54,3 +54,4 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 2026-10-03: Phase 1 order-service implemented with Node.js built-in HTTP and verified via standalone docker build/run; startup log confirmed port 3000 and curl http://127.0.0.1:3002/health returned HTTP 200 with {"status":"ok"}.
 2026-10-04: Phase 1 complete: docker compose up --build --detach built and started all three services on cerberus_app; startup logs and running state confirmed, terminal curl returned HTTP 200 from all three /health endpoints, and gateway reached both downstream services by name.
 2026-10-04: Phase 2 verified with docker compose up --build --detach gateway user-service order-service: direct and gateway GET /users and /orders returned HTTP 200 with sample data; docker compose stop user-service caused gateway GET /users to return HTTP 502 with {"error":"Downstream service unavailable","service":"user-service"}, while gateway remained running and /health and /orders returned HTTP 200; user-service left stopped.
+2026-10-04: Phase 3 metrics endpoints added to all three app services with approved prom-client 15.1.3, completed-request counters and latency histograms labeled by service/method/route/status; Compose rebuild/start, raw curl HTTP 200 metrics output, health/business routes, and counter/histogram increments verified; Prometheus and Grafana remain pending.
