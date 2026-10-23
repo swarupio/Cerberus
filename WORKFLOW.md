@@ -44,6 +44,15 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 - [ ] Confirm the live demo still works against the cloud deployment
 - [ ] Document cost/cleanup steps so nobody leaves resources running and gets billed
 
+## Phase 7 — Control Panel (host only)
+- [x] Document the Control Panel scope and Phase 7 checklist
+- [x] Build the dependency-free host server and single-page controls with shared chaos-tool target validation
+- [x] Verify every API endpoint with curl, including protected targets and the user-service kill/status transition
+- [x] Auto-start panel traffic, refresh live counters every second, label service roles, and auto-scale Grafana request-rate/latency panels with millisecond latency
+- [ ] Future: event log (deferred)
+- [ ] Future: Grafana embed (deferred)
+- [ ] Future: additional failure modes (deferred)
+
 ## Notes log
 <!-- Add one line per completed task here, e.g.: -->
 <!-- 2026-10-05: Phase 1 gateway skeleton done, health endpoint verified via curl -->
@@ -60,3 +69,5 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 2026-10-04: Phase 4 verified with approved opossum 10.0.0 on gateway → user-service, 3-consecutive-failure trip and 30s cooldown: Compose rebuild/start passed; stopping user-service produced closed→open metrics on the third failure and a 3.4ms HTTP 503 fallback, /orders and /health stayed HTTP 200, restart/probe produced half_open→closed metrics and HTTP 200 /users; logs and Grafana /api/ds/query confirmed open=1/half-open=2/closed=0 timeline values; all services left running.
 2026-10-04: Phase 5 manual Node.js/Docker CLI implemented without dependencies: project/directory/service allowlist checks, list, exact-name/service-name kill and configurable restart delay; 5 tests passed, live Prometheus/Grafana target attempts were rejected, and kill cerberus-user-service-1 --restart-after 10 logged exited/137 then running/true after 10s; user health and gateway /users returned HTTP 200 afterward, monitoring stayed running; full dashboard demo remains pending.
 2026-10-04: Phase 5 complete: full Compose build/up and 60s user-service chaos run verified healthy→DOWN/Open→DOWN/Half-open→UP/Closed using Grafana panel API, Prometheus targets, raw circuit metrics and HTTP responses; CLI automatically restarted user-service, recovery /users was HTTP 200, monitoring IDs/start times stayed unchanged; README documents architecture, startup, repeatable demo commands, actual stage evidence and Git attribution.
+2026-10-23: Added the Control Panel scope/checklist and implemented the host-only server/page without dependencies; Node syntax check, server startup, and all 5 existing chaos-tool tests passed, but Compose/curl verification and commit are pending because Windows command creation fails with Access is denied (os error 5).
+2026-10-23: Verified Compose build/start, panel auto-traffic/counters/page and start/stop/kill/restart APIs via curl (errors increased during user-service outage; monitoring actions returned 403), 5 CLI tests, and reloaded Grafana auto-scaled panels with millisecond latency and non-zero gateway request rate (1.7975 req/s); user-service restored and traffic left on.

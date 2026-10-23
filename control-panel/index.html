@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cerberus Control Panel</title>
+<style>
+  :root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; background: #111827; color: #e5e7eb; }
+  body { max-width: 1000px; margin: 4rem auto; padding: 0 1.5rem; }
+  h1 { margin-bottom: .25rem; } p { color: #b9c5d7; }
+  header, .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  a { color: #93c5fd; } #cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin: 2rem 0; }
+  article { background: #1f2937; border: 1px solid #475569; border-radius: 12px; padding: 1.5rem; }
+  h2 { font-size: 1.15rem; margin-top: 0; } button { font: inherit; cursor: pointer; border: 1px solid #64748b; border-radius: 6px; background: #334155; color: white; padding: .5rem .9rem; margin-right: .4rem; }
+  button[data-action="kill"] { background: #7f1d1d; } button:disabled { opacity: .5; cursor: wait; }
+  .running { color: #86efac; } .stopped { color: #fca5a5; } #message { color: #fca5a5; min-height: 1.5em; }
+</style>
+<header><div><h1>Cerberus Control Panel</h1><p>Local service controls · refreshes every second</p></div><a href="http://127.0.0.1:3003/d/cerberus-overview/cerberus-overview" target="_blank" rel="noopener">Open Grafana ↗</a></header>
+<main>
+  <div id="cards"></div>
+  <div class="toolbar"><span id="circuit">User-service circuit: unknown</span><button id="traffic" disabled>Start traffic</button></div>
+  <p id="counters">Requests sent: <span id="requestsSent">0</span> · Successes: <span id="successes">0</span> · Errors: <span id="errors">0</span> · Last latency: <span id="lastLatencyMs">—</span> ms</p>
+  <p>Traffic calls /users and /orders once per second. Killed services stay stopped until you restart them.</p>
+  <p id="message" role="status" aria-live="polite"></p>
+</main>
+<script>
+  const cards = document.querySelector('#cards');
+  const traffic = document.querySelector('#traffic');
+  const message = document.querySelector('#message');
+  let trafficRunning = false;
+  let busy = false;
+  const labels = {
+    gateway: 'entry point: if it dies, everything is down',
+    'user-service': 'protected by circuit breaker',
+    'order-service': 'independent service',
+  };
+  for (const service of ['gateway', 'user-service', 'order-service']) {
+    const card = document.createElement('article');
+    card.dataset.service = service;
+    card.innerHTML = `<h2>${service}</h2><p>${labels[service]}</p><p class="state">Loading…</p><button data-action="kill" disabled>Kill</button><button data-action="restart" disabled>Restart</button>`;
+    cards.append(card);
+  }
+  async function api(url, method = 'GET') {
+    const response = await fetch(url, { method });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  }
+  async function refresh() {
+    try {
+      const data = await api('/api/status');
+      for (const { service, status } of data.services) {
+        const card = [...cards.children].find(card => card.dataset.service === service);
+        const state = card.querySelector('.state');
+        state.textContent = status;
+        state.className = 'state ' + status;
+        for (const button of card.querySelectorAll('button')) button.disabled = busy || (button.dataset.action === 'kill' && status !== 'running');
+      }
+      document.querySelector('#circuit').textContent = 'User-service circuit: ' + data.circuit.state;
+      trafficRunning = data.traffic;
+      for (const key of ['requestsSent', 'successes', 'errors', 'lastLatencyMs']) {
+        document.getElementById(key).textContent = data.trafficStats[key] ?? '—';
+      }
+      traffic.textContent = trafficRunning ? 'Stop traffic' : 'Start traffic';
+      traffic.disabled = busy;
+    } catch (error) {
+      message.textContent = error.message;
+      for (const card of cards.children) {
+        card.querySelector('.state').textContent = 'Unknown — status unavailable';
+        card.querySelector('.state').className = 'state';
+      }
+      document.querySelector('#circuit').textContent = 'User-service circuit: unknown';
+      document.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    }
+  }
+  async function act(url) {
+    busy = true;
+    message.textContent = '';
+    document.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    try { await api(url, 'POST'); } catch (error) { message.textContent = error.message; }
+    finally { busy = false; await refresh(); }
+  }
+  cards.addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (button) void act('/api/' + button.dataset.action + '/' + button.closest('article').dataset.service);
+  });
+  traffic.addEventListener('click', () => void act('/api/traffic/' + (trafficRunning ? 'stop' : 'start')));
+  void refresh();
+  setInterval(refresh, 1000);
+</script>
+</html>
