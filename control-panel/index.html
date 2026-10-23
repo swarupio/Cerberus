@@ -13,6 +13,8 @@
   h2 { font-size: 1.15rem; margin-top: 0; } button { font: inherit; cursor: pointer; border: 1px solid #64748b; border-radius: 6px; background: #334155; color: white; padding: .5rem .9rem; margin-right: .4rem; }
   button[data-action="kill"] { background: #7f1d1d; } button:disabled { opacity: .5; cursor: wait; }
   .running { color: #86efac; } .stopped { color: #fca5a5; } #message { color: #fca5a5; min-height: 1.5em; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; } th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #475569; }
+  progress { width: 100%; } section { margin-top: 2rem; }
 </style>
 <header><div><h1>Cerberus Control Panel</h1><p>Local service controls · refreshes every second</p></div><a href="http://127.0.0.1:3003/d/cerberus-overview/cerberus-overview" target="_blank" rel="noopener">Open Grafana ↗</a></header>
 <main>
@@ -21,6 +23,15 @@
   <p id="counters">Requests sent: <span id="requestsSent">0</span> · Successes: <span id="successes">0</span> · Errors: <span id="errors">0</span> · Last latency: <span id="lastLatencyMs">—</span> ms</p>
   <p>Traffic calls /users and /orders once per second. Killed services stay stopped until you restart them.</p>
   <p id="message" role="status" aria-live="polite"></p>
+  <section aria-labelledby="experiment-title">
+    <h2 id="experiment-title">Run experiment</h2>
+    <p>Two 60-second runs, breaker ON then OFF. 20 requests/s total, split equally between /users and /orders. Kill user-service at 15 seconds; restart at 40 seconds. Other controls and background traffic pause during the experiment.</p>
+    <button id="experiment" disabled>Run experiment</button>
+    <p id="experiment-status" role="status" aria-live="polite">Ready</p>
+    <progress id="experiment-progress" max="60" value="0" aria-label="Current run progress"></progress>
+    <table><thead><tr><th>Metric</th><th>Breaker ON</th><th>Breaker OFF</th></tr></thead><tbody id="results"></tbody></table>
+    <p>Latency includes successful and failed requests across both endpoints. Recovery measures the first successful /users response after the restart request. Completed tables are saved to experiments/results.md.</p>
+  </section>
 </main>
 <script>
   const cards = document.querySelector('#cards');
@@ -48,12 +59,32 @@
   async function refresh() {
     try {
       const data = await api('/api/status');
+      const experiment = data.experiment;
+      const locked = busy || experiment.status === 'running';
+      document.querySelector('#experiment').disabled = locked;
+      document.querySelector('#experiment-status').textContent = experiment.status + ': ' + (experiment.phase || 'Ready')
+        + (experiment.status === 'running' ? ` · ${Math.floor(experiment.elapsedSeconds)} / 60 s · ${experiment.completed || 0} / ${experiment.requestsSent || 0} requests completed` : '');
+      document.querySelector('#experiment-progress').value = experiment.status === 'complete' ? 60 : experiment.elapsedSeconds;
+      const rows = [['Requests', 'requests', ''], ['Success', 'successPercent', '%'], ['Errors', 'errorPercent', '%'],
+        ['p50 latency', 'p50Ms', ' ms'], ['p95 latency', 'p95Ms', ' ms'], ['/users recovery', 'recoverySeconds', ' s']];
+      document.querySelector('#results').replaceChildren(...rows.map(([label, key, suffix]) => {
+        const row = document.createElement('tr');
+        for (const value of [label, ...['on', 'off'].map(mode => {
+          const result = experiment.results.find(result => result.mode === mode);
+          if (!result) return '—';
+          const value = result.summary[key];
+          return value == null ? 'Not observed' : Number(value).toFixed(2) + suffix;
+        })]) {
+          const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
+        }
+        return row;
+      }));
       for (const { service, status } of data.services) {
         const card = [...cards.children].find(card => card.dataset.service === service);
         const state = card.querySelector('.state');
         state.textContent = status;
         state.className = 'state ' + status;
-        for (const button of card.querySelectorAll('button')) button.disabled = busy || (button.dataset.action === 'kill' && status !== 'running');
+        for (const button of card.querySelectorAll('button')) button.disabled = locked || (button.dataset.action === 'kill' && status !== 'running');
       }
       document.querySelector('#circuit').textContent = 'User-service circuit: ' + data.circuit.state;
       trafficRunning = data.traffic;
@@ -61,7 +92,7 @@
         document.getElementById(key).textContent = data.trafficStats[key] ?? '—';
       }
       traffic.textContent = trafficRunning ? 'Stop traffic' : 'Start traffic';
-      traffic.disabled = busy;
+      traffic.disabled = locked;
     } catch (error) {
       message.textContent = error.message;
       for (const card of cards.children) {
@@ -84,6 +115,7 @@
     if (button) void act('/api/' + button.dataset.action + '/' + button.closest('article').dataset.service);
   });
   traffic.addEventListener('click', () => void act('/api/traffic/' + (trafficRunning ? 'stop' : 'start')));
+  document.querySelector('#experiment').addEventListener('click', () => void act('/api/experiment/start'));
   void refresh();
   setInterval(refresh, 1000);
 </script>

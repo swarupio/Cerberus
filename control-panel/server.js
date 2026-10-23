@@ -4,6 +4,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { assertTarget } = require('../chaos-tool/cli');
+const { createExperiment } = require('./experiment');
 
 const root = path.resolve(__dirname, '..');
 const run = promisify(execFile);
@@ -58,6 +59,7 @@ async function status() {
     circuit: { downstream: 'user-service', state: circuit },
     traffic: Boolean(trafficTimer),
     trafficStats: { ...trafficStats },
+    experiment: experiment.snapshot(),
   };
 }
 
@@ -106,6 +108,42 @@ function json(response, code, body) {
   response.end(JSON.stringify(body));
 }
 
+async function serviceAction(command, service) {
+  const { project, allowed } = await containers();
+  assertTarget({ Config: { Labels: {
+    'com.docker.compose.project': project,
+    'com.docker.compose.project.working_dir': root,
+    'com.docker.compose.service': service,
+    'com.docker.compose.oneoff': 'false',
+  } } }, project);
+  const matches = allowed.filter(container => container.Config.Labels['com.docker.compose.service'] === service);
+  if (matches.length !== 1) throw new Error('Expected exactly one project container');
+  if (pendingActions.has(service)) throw new Error('Service action already in progress');
+  pendingActions.add(service);
+  try {
+    const container = JSON.parse(await docker(['inspect', '--type', 'container', matches[0].Id]))[0];
+    assertTarget(container, project);
+    if (command === 'kill' && container.State.Running) {
+      await docker(['kill', '--signal', 'SIGKILL', container.Id]);
+    } else if (command === 'restart') await docker(['restart', container.Id]);
+    const after = JSON.parse(await docker(['inspect', '--type', 'container', container.Id]))[0];
+    if (after.State.Running !== (command === 'restart')) throw new Error('Container did not reach requested state');
+    return { service, status: after.State.Running ? 'running' : 'stopped' };
+  } finally { pendingActions.delete(service); }
+}
+
+async function toggleBreaker(mode) {
+  const response = await fetch('http://127.0.0.1:3000/admin/breaker', {
+    method: 'POST', body: mode, signal: AbortSignal.timeout(3000),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || 'Breaker toggle failed');
+  return body;
+}
+
+const experiment = createExperiment({ action: serviceAction, toggle: toggleBreaker,
+  stopTraffic, startTraffic, trafficOn: () => Boolean(trafficTimer), root });
+
 const server = http.createServer(async (request, response) => {
   // Local Docker controls must only be accessible through this loopback origin.
   if (request.headers.host !== '127.0.0.1:4000' && request.headers.host !== 'localhost:4000') {
@@ -122,6 +160,16 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && request.url === '/api/status') {
       json(response, 200, await status()); return;
     }
+    if (request.method === 'POST' && request.url === '/api/experiment/start') {
+      if (experiment.running() || pendingActions.size) {
+        json(response, 409, { error: 'Experiment or service action already running' }); return;
+      }
+      experiment.start();
+      json(response, 202, experiment.snapshot()); return;
+    }
+    if (request.method === 'POST' && experiment.running()) {
+      json(response, 409, { error: 'Controls locked while experiment is running' }); return;
+    }
     if (request.method === 'POST' && ['/api/traffic/start', '/api/traffic/stop'].includes(request.url)) {
       if (request.url.endsWith('/start')) {
         startTraffic();
@@ -131,34 +179,15 @@ const server = http.createServer(async (request, response) => {
     const action = request.url.match(/^\/api\/(kill|restart)\/([^/]+)$/);
     if (request.method === 'POST' && action) {
       const [, command, service] = action;
-      const { project, allowed } = await containers();
-      // Reuse the CLI policy even for absent or protected service names.
-      assertTarget({ Config: { Labels: {
-        'com.docker.compose.project': project,
-        'com.docker.compose.project.working_dir': root,
-        'com.docker.compose.service': service,
-        'com.docker.compose.oneoff': 'false',
-      } } }, project);
-      const matches = allowed.filter(container => container.Config.Labels['com.docker.compose.service'] === service);
-      if (matches.length !== 1) { json(response, 409, { error: 'Expected exactly one project container' }); return; }
-      if (pendingActions.has(service)) { json(response, 409, { error: 'Service action already in progress' }); return; }
-      pendingActions.add(service);
-      try {
-        const container = JSON.parse(await docker(['inspect', '--type', 'container', matches[0].Id]))[0];
-        assertTarget(container, project);
-        if (command === 'kill' && container.State.Running) {
-          await docker(['kill', '--signal', 'SIGKILL', container.Id]);
-        } else if (command === 'restart') await docker(['restart', container.Id]);
-        const after = JSON.parse(await docker(['inspect', '--type', 'container', container.Id]))[0];
-        if (after.State.Running !== (command === 'restart')) throw new Error('Container did not reach requested state');
-        json(response, 200, { service, status: after.State.Running ? 'running' : 'stopped' });
-      } finally { pendingActions.delete(service); }
+      json(response, 200, await serviceAction(command, service));
       return;
     }
     json(response, 404, { error: 'Not found' });
   } catch (error) {
     console.error(error.message);
-    json(response, error.message.startsWith('Protected target:') ? 403 : 500, { error: error.message });
+    const code = error.message.startsWith('Protected target:') ? 403
+      : ['Expected exactly one project container', 'Service action already in progress'].includes(error.message) ? 409 : 500;
+    json(response, code, { error: error.message });
   }
 });
 
@@ -166,7 +195,8 @@ server.listen(4000, '127.0.0.1', () => {
   startTraffic();
   console.log('Control Panel listening at http://127.0.0.1:4000 (traffic on)');
 });
-for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {
+  await experiment.stop();
   stopTraffic();
   server.close();
   server.closeAllConnections();

@@ -53,6 +53,11 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 - [ ] Future: Grafana embed (deferred)
 - [ ] Future: additional failure modes (deferred)
 
+## Phase 8 — Control panel experiments
+- [x] Add the localhost-only runtime gateway breaker toggle without dependencies
+- [x] Add one-click ON/OFF 60-second experiments, live progress, comparison tables, and experiments/results.md
+- [x] Verify both real rounds, localhost restrictions, control locking, and restored services; commit results
+
 ## Notes log
 <!-- Add one line per completed task here, e.g.: -->
 <!-- 2026-10-05: Phase 1 gateway skeleton done, health endpoint verified via curl -->
@@ -71,3 +76,4 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 2026-10-04: Phase 5 complete: full Compose build/up and 60s user-service chaos run verified healthy→DOWN/Open→DOWN/Half-open→UP/Closed using Grafana panel API, Prometheus targets, raw circuit metrics and HTTP responses; CLI automatically restarted user-service, recovery /users was HTTP 200, monitoring IDs/start times stayed unchanged; README documents architecture, startup, repeatable demo commands, actual stage evidence and Git attribution.
 2026-10-23: Added the Control Panel scope/checklist and implemented the host-only server/page without dependencies; Node syntax check, server startup, and all 5 existing chaos-tool tests passed, but Compose/curl verification and commit are pending because Windows command creation fails with Access is denied (os error 5).
 2026-10-23: Verified Compose build/start, panel auto-traffic/counters/page and start/stop/kill/restart APIs via curl (errors increased during user-service outage; monitoring actions returned 403), 5 CLI tests, and reloaded Grafana auto-scaled panels with millisecond latency and non-zero gateway request rate (1.7975 req/s); user-service restored and traffic left on.
+2026-10-23: Phase 8 verified with Compose build/start, curl ON/OFF=200, invalid body=400, cross-origin/container-peer=403 and concurrent controls=409, 9 tests, and two real 1,200-request rounds saved to experiments/results.md (ON/OFF success 72.33%/80.50%, p95 17.23/3006.71 ms, recovery 8.92/2.08 s); all services running, breaker ON, background traffic restored; no dependencies added.
