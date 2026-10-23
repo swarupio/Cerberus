@@ -26,10 +26,15 @@
   <section aria-labelledby="experiment-title">
     <h2 id="experiment-title">Run experiment</h2>
     <p>Two 60-second runs, breaker ON then OFF. 20 requests/s total, split equally between /users and /orders. Kill user-service at 15 seconds; restart at 40 seconds. Other controls and background traffic pause during the experiment.</p>
+    <p><label for="cooldown">Breaker cooldown (seconds, 1–300): </label><input id="cooldown" type="number" min="1" max="300" step="1" value="30" required> <button id="apply-cooldown" disabled>Apply cooldown</button></p>
+    <p>Applying settings closes the circuit and resets consecutive failures. ON/OFF runs use the selected cooldown. The comparison below runs six ON trials: three each at 30 s and 5 s, alternating, and restores your previous settings afterward.</p>
     <button id="experiment" disabled>Run experiment</button>
+    <button id="compare-cooldowns" disabled>Compare 30 s vs 5 s (3 runs each)</button>
     <p id="experiment-status" role="status" aria-live="polite">Ready</p>
     <progress id="experiment-progress" max="60" value="0" aria-label="Current run progress"></progress>
-    <table><thead><tr><th>Metric</th><th>Breaker ON</th><th>Breaker OFF</th></tr></thead><tbody id="results"></tbody></table>
+    <table id="comparison-table"><thead><tr><th>Metric</th><th>Breaker ON</th><th>Breaker OFF</th></tr></thead><tbody id="results"></tbody></table>
+    <table id="cooldown-table" hidden><thead><tr><th>Cooldown (ON)</th><th>Runs</th><th>Mean success %</th><th>Mean run p95 (ms)</th><th>Mean recovery (s)</th></tr></thead><tbody id="cooldown-results"></tbody></table>
+    <p>Cooldown averages are arithmetic means of individual run metrics. Recovery is averaged only when every run has recovered.</p>
     <p>Latency includes successful and failed requests across both endpoints. Recovery measures the first successful /users response after the restart request. Completed tables are saved to experiments/results.md.</p>
   </section>
 </main>
@@ -50,8 +55,8 @@
     card.innerHTML = `<h2>${service}</h2><p>${labels[service]}</p><p class="state">Loading…</p><button data-action="kill" disabled>Kill</button><button data-action="restart" disabled>Restart</button>`;
     cards.append(card);
   }
-  async function api(url, method = 'GET') {
-    const response = await fetch(url, { method });
+  async function api(url, method = 'GET', body) {
+    const response = await fetch(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Request failed');
     return data;
@@ -62,8 +67,21 @@
       const experiment = data.experiment;
       const locked = busy || experiment.status === 'running';
       document.querySelector('#experiment').disabled = locked;
+      document.querySelector('#apply-cooldown').disabled = locked;
+      document.querySelector('#compare-cooldowns').disabled = locked;
+      document.querySelector('#cooldown').disabled = locked;
       document.querySelector('#experiment-status').textContent = experiment.status + ': ' + (experiment.phase || 'Ready')
-        + (experiment.status === 'running' ? ` · ${Math.floor(experiment.elapsedSeconds)} / 60 s · ${experiment.completed || 0} / ${experiment.requestsSent || 0} requests completed` : '');
+        + (experiment.status === 'running' ? ` · round ${experiment.roundNumber || 0} / ${experiment.totalRounds} · ${Math.floor(experiment.elapsedSeconds)} / 60 s · ${experiment.completed || 0} / ${experiment.requestsSent || 0} requests completed` : '');
+      document.querySelector('#comparison-table').hidden = experiment.kind === 'cooldowns';
+      document.querySelector('#cooldown-table').hidden = experiment.kind !== 'cooldowns';
+      document.querySelector('#cooldown-results').replaceChildren(...experiment.averages.map(result => {
+        const row = document.createElement('tr');
+        for (const value of [result.resetTimeoutSeconds + ' s', result.runs,
+          ...['successPercent', 'p95Ms', 'recoverySeconds'].map(key => result[key] == null ? 'Not observed in every run' : result[key].toFixed(2))]) {
+          const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
+        }
+        return row;
+      }));
       document.querySelector('#experiment-progress').value = experiment.status === 'complete' ? 60 : experiment.elapsedSeconds;
       const rows = [['Requests', 'requests', ''], ['Success', 'successPercent', '%'], ['Errors', 'errorPercent', '%'],
         ['p50 latency', 'p50Ms', ' ms'], ['p95 latency', 'p95Ms', ' ms'], ['/users recovery', 'recoverySeconds', ' s']];
@@ -103,11 +121,14 @@
       document.querySelectorAll('button').forEach(button => { button.disabled = true; });
     }
   }
-  async function act(url) {
+  async function act(url, body) {
     busy = true;
     message.textContent = '';
     document.querySelectorAll('button').forEach(button => { button.disabled = true; });
-    try { await api(url, 'POST'); } catch (error) { message.textContent = error.message; }
+    try {
+      const result = await api(url, 'POST', body);
+      if (url === '/api/breaker') message.textContent = `Breaker ${result.breaker.toUpperCase()} · cooldown ${result.resetTimeoutSeconds} s`;
+    } catch (error) { message.textContent = error.message; }
     finally { busy = false; await refresh(); }
   }
   cards.addEventListener('click', event => {
@@ -115,7 +136,13 @@
     if (button) void act('/api/' + button.dataset.action + '/' + button.closest('article').dataset.service);
   });
   traffic.addEventListener('click', () => void act('/api/traffic/' + (trafficRunning ? 'stop' : 'start')));
-  document.querySelector('#experiment').addEventListener('click', () => void act('/api/experiment/start'));
+  function withCooldown(url) {
+    const input = document.querySelector('#cooldown');
+    if (input.reportValidity()) void act(url, { resetTimeoutSeconds: Number(input.value) });
+  }
+  document.querySelector('#experiment').addEventListener('click', () => withCooldown('/api/experiment/start'));
+  document.querySelector('#apply-cooldown').addEventListener('click', () => withCooldown('/api/breaker'));
+  document.querySelector('#compare-cooldowns').addEventListener('click', () => void act('/api/experiment/cooldowns'));
   void refresh();
   setInterval(refresh, 1000);
 </script>

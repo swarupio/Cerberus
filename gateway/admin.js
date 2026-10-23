@@ -24,4 +24,22 @@ function isLocalAdmin(request) {
     && (!request.headers.origin || origins.includes(request.headers.origin));
 }
 
-module.exports = { isLocalAdmin };
+function parseBreakerSettings(body, current) {
+  const settings = ['on', 'off'].includes(body) ? { breaker: body } : JSON.parse(body);
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)
+    || !Object.keys(settings).length
+    || Object.keys(settings).some(key => !['breaker', 'resetTimeoutSeconds'].includes(key))) {
+    throw new Error('Use on/off or JSON with breaker and/or resetTimeoutSeconds');
+  }
+  if (settings.breaker !== undefined && !['on', 'off'].includes(settings.breaker)) {
+    throw new Error('breaker must be on or off');
+  }
+  if (settings.resetTimeoutSeconds !== undefined
+    && (typeof settings.resetTimeoutSeconds !== 'number' || !Number.isFinite(settings.resetTimeoutSeconds)
+      || settings.resetTimeoutSeconds < 1 || settings.resetTimeoutSeconds > 300)) {
+    throw new Error('resetTimeoutSeconds must be a number from 1 to 300');
+  }
+  return { ...current, ...settings };
+}
+
+module.exports = { isLocalAdmin, parseBreakerSettings };

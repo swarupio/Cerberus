@@ -108,6 +108,23 @@ function json(response, code, body) {
   response.end(JSON.stringify(body));
 }
 
+async function readSettings(request) {
+  let body = '';
+  for await (const chunk of request) {
+    body += chunk;
+    if (body.length > 128) {
+      const error = new Error('Body too large'); error.statusCode = 413; throw error;
+    }
+  }
+  try {
+    const settings = body ? JSON.parse(body) : {};
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error();
+    return settings;
+  } catch {
+    const error = new Error('Expected a JSON settings object'); error.statusCode = 400; throw error;
+  }
+}
+
 async function serviceAction(command, service) {
   const { project, allowed } = await containers();
   assertTarget({ Config: { Labels: {
@@ -132,12 +149,16 @@ async function serviceAction(command, service) {
   } finally { pendingActions.delete(service); }
 }
 
-async function toggleBreaker(mode) {
+async function toggleBreaker(mode, resetTimeoutSeconds) {
   const response = await fetch('http://127.0.0.1:3000/admin/breaker', {
-    method: 'POST', body: mode, signal: AbortSignal.timeout(3000),
+    method: 'POST', body: JSON.stringify({ breaker: mode, resetTimeoutSeconds }), signal: AbortSignal.timeout(3000),
   });
   const body = await response.json();
-  if (!response.ok) throw new Error(body.error || 'Breaker toggle failed');
+  if (!response.ok) {
+    const error = new Error(body.error || 'Breaker toggle failed');
+    error.statusCode = response.status;
+    throw error;
+  }
   return body;
 }
 
@@ -160,15 +181,20 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && request.url === '/api/status') {
       json(response, 200, await status()); return;
     }
-    if (request.method === 'POST' && request.url === '/api/experiment/start') {
+    if (request.method === 'POST' && ['/api/experiment/start', '/api/experiment/cooldowns'].includes(request.url)) {
       if (experiment.running() || pendingActions.size) {
         json(response, 409, { error: 'Experiment or service action already running' }); return;
       }
-      experiment.start();
+      const options = request.url.endsWith('/cooldowns') ? { kind: 'cooldowns' } : await readSettings(request);
+      experiment.start(options);
       json(response, 202, experiment.snapshot()); return;
     }
     if (request.method === 'POST' && experiment.running()) {
       json(response, 409, { error: 'Controls locked while experiment is running' }); return;
+    }
+    if (request.method === 'POST' && request.url === '/api/breaker') {
+      const settings = await readSettings(request);
+      json(response, 200, await toggleBreaker(settings.breaker, settings.resetTimeoutSeconds)); return;
     }
     if (request.method === 'POST' && ['/api/traffic/start', '/api/traffic/stop'].includes(request.url)) {
       if (request.url.endsWith('/start')) {
@@ -185,8 +211,8 @@ const server = http.createServer(async (request, response) => {
     json(response, 404, { error: 'Not found' });
   } catch (error) {
     console.error(error.message);
-    const code = error.message.startsWith('Protected target:') ? 403
-      : ['Expected exactly one project container', 'Service action already in progress'].includes(error.message) ? 409 : 500;
+    const code = error.statusCode || (error.message.startsWith('Protected target:') ? 403
+      : ['Expected exactly one project container', 'Service action already in progress'].includes(error.message) ? 409 : 500);
     json(response, code, { error: error.message });
   }
 });

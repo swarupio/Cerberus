@@ -1,6 +1,6 @@
 const http = require('node:http');
 const CircuitBreaker = require('opossum');
-const { isLocalAdmin } = require('./admin');
+const { isLocalAdmin, parseBreakerSettings } = require('./admin');
 const { instrumentRequest, serveMetrics, setCircuitState } = require('./metrics');
 
 const port = process.env.PORT || 3000;
@@ -63,13 +63,15 @@ const server = http.createServer(async (request, response) => {
         body += chunk;
         if (body.length > 128) { reply(413, { error: 'Body too large' }); return; }
       }
-      if (!['on', 'off'].includes(body)) { reply(400, { error: 'Body must be on or off' }); return; }
       const previous = breakerEnabled ? 'on' : 'off';
-      breakerEnabled = body === 'on';
+      const previousResetTimeoutSeconds = userBreaker.options.resetTimeout / 1000;
+      const settings = parseBreakerSettings(body, { breaker: previous, resetTimeoutSeconds: previousResetTimeoutSeconds });
+      breakerEnabled = settings.breaker === 'on';
+      userBreaker.options.resetTimeout = settings.resetTimeoutSeconds * 1000;
       consecutiveFailures = 0;
       userBreaker.close();
-      reply(200, { breaker: body, previous });
-    } catch { reply(400, { error: 'Invalid request body' }); }
+      reply(200, { ...settings, previous, previousResetTimeoutSeconds });
+    } catch (error) { reply(400, { error: error.message }); }
     return;
   }
   instrumentRequest(request, response, ['/health', '/metrics', '/users', '/orders']);

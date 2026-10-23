@@ -28,16 +28,35 @@ function table(results) {
   ].join('\n');
 }
 
+function cooldownAverages(results) {
+  return [30, 5].map(resetTimeoutSeconds => {
+    const runs = results.filter(result => result.mode === 'on' && result.resetTimeoutSeconds === resetTimeoutSeconds);
+    const mean = key => runs.length && runs.every(run => run.summary[key] != null)
+      ? runs.reduce((sum, run) => sum + run.summary[key], 0) / runs.length : null;
+    return { resetTimeoutSeconds, runs: runs.length, successPercent: mean('successPercent'),
+      p95Ms: mean('p95Ms'), recoverySeconds: mean('recoverySeconds'),
+      recoveredRuns: runs.filter(run => run.summary.recoverySeconds != null).length };
+  });
+}
+
+function cooldownTable(results) {
+  const format = n => n == null ? 'Not observed in every run' : n.toFixed(2);
+  return ['| Cooldown (ON) | Runs | Mean success % | Mean run p95 (ms) | Mean recovery (s) |',
+    '| --- | ---: | ---: | ---: | ---: |',
+    ...cooldownAverages(results).map(row => `| ${row.resetTimeoutSeconds} s | ${row.runs} | ${format(row.successPercent)} | ${format(row.p95Ms)} | ${format(row.recoverySeconds)} |`)].join('\n');
+}
+
 function createExperiment({ action, toggle, stopTraffic, startTraffic, trafficOn, root }) {
   let state = { status: 'idle', results: [] };
   let task;
   let controller;
   let stopping = false;
-  const snapshot = () => ({ ...state, elapsedSeconds: state.roundStarted
+  const snapshot = () => ({ ...state, averages: cooldownAverages(state.results), elapsedSeconds: state.roundStarted
     ? Math.min(60, (performance.now() - state.roundStarted) / 1000) : 0 });
 
-  async function runRound(mode, signal) {
-    state.phase = 'Preparing ' + mode.toUpperCase();
+  async function runRound({ mode, resetTimeoutSeconds, trial }, signal) {
+    const label = `${mode.toUpperCase()} · cooldown ${resetTimeoutSeconds} s · trial ${trial}`;
+    state.phase = 'Preparing ' + label;
     await action('restart', 'user-service');
     await toggle('off');
     for (const route of ['/users', '/orders']) {
@@ -53,14 +72,14 @@ function createExperiment({ action, toggle, stopTraffic, startTraffic, trafficOn
       }
       if (!ready) throw new Error('Preflight failed: ' + route);
     }
-    await toggle(mode);
+    await toggle(mode, resetTimeoutSeconds);
     const samples = [];
     const pending = new Set();
     const started = performance.now();
     let restartRequested = null;
     let recovered = null;
     state.roundStarted = started;
-    state.phase = 'Running ' + mode.toUpperCase();
+    state.phase = 'Running ' + label;
     state.requestsSent = 0;
     state.completed = 0;
     const events = [];
@@ -108,7 +127,7 @@ function createExperiment({ action, toggle, stopTraffic, startTraffic, trafficOn
       await Promise.all(actions);
       if (actionError) throw actionError;
       await Promise.all(pending);
-      return { mode, summary: summarize(samples, recovered), events,
+      return { mode, resetTimeoutSeconds, trial, summary: summarize(samples, recovered), events,
         routes: Object.fromEntries(['/users', '/orders'].map(route => [route,
           summarize(samples.filter(sample => sample.route === route), route === '/users' ? recovered : null)])) };
     } finally {
@@ -119,21 +138,25 @@ function createExperiment({ action, toggle, stopTraffic, startTraffic, trafficOn
     }
   }
 
-  async function run() {
+  async function run(plan) {
     const resumeTraffic = trafficOn();
     let previous = 'on';
+    let previousCooldown;
     let failure;
     stopTraffic();
     try {
-      previous = (await toggle('off')).previous;
-      for (const mode of ['on', 'off']) {
+      const settings = await toggle('off');
+      previous = settings.previous;
+      previousCooldown = settings.previousResetTimeoutSeconds;
+      for (const round of plan) {
         if (stopping) throw new Error('Experiment interrupted');
         controller = new AbortController();
-        state.results.push(await runRound(mode, controller.signal));
+        state.roundNumber = state.results.length + 1;
+        state.results.push(await runRound(round, controller.signal));
       }
     } catch (error) { failure = error; }
     state.phase = 'Restoring services';
-    for (const restore of [() => action('restart', 'user-service'), () => toggle(previous)]) {
+    for (const restore of [() => action('restart', 'user-service'), () => toggle(previous, previousCooldown)]) {
       try { await restore(); } catch (error) { failure = new Error([failure?.message, 'Cleanup: ' + error.message].filter(Boolean).join('; ')); }
     }
     if (resumeTraffic) startTraffic();
@@ -141,8 +164,11 @@ function createExperiment({ action, toggle, stopTraffic, startTraffic, trafficOn
       try {
         const directory = path.join(root, 'experiments');
         await mkdir(directory, { recursive: true });
+        const comparison = state.kind === 'cooldowns'
+          ? `Breaker ON: three trials each at 30 s and 5 s cooldown, alternating 30/5. Averages are arithmetic means of the three per-run metrics, including mean per-run p95 (not pooled p95). Recovery mean is reported only if all runs recover.\n\n${cooldownTable(state.results)}\n\n| Cooldown | Trial | Requests | Success % | p95 (ms) | Recovery (s) |\n| --- | ---: | ---: | ---: | ---: | ---: |\n${state.results.map(result => `| ${result.resetTimeoutSeconds} s | ${result.trial} | ${result.summary.requests} | ${result.summary.successPercent.toFixed(2)} | ${result.summary.p95Ms.toFixed(2)} | ${result.summary.recoverySeconds?.toFixed(2) ?? 'Not observed'} |`).join('\n')}`
+          : `Cooldown: ${plan[0].resetTimeoutSeconds} s.\n\n${table(state.results)}`;
         await appendFile(path.join(directory, 'results.md'),
-          `\n## ${state.startedAt}\n\n60 seconds per mode; 20 requests/s total (10 per endpoint). Kill requested at 15 s; restart requested at 40 s. Percentages and nearest-rank latencies include all responses and network/time-out errors across both routes. Recovery is the first successful /users request dispatched after the restart request, measured from that request; Not observed means no recovery within the round. Background traffic is paused.\n\n${table(state.results)}\n\nAction timing (seconds from round start):\n\n\`\`\`json\n${JSON.stringify(state.results.map(({ mode, events, routes }) => ({ mode, events, routes })), null, 2)}\n\`\`\`\n`);
+          `\n## ${state.startedAt}\n\n60 seconds per run; 20 requests/s total (10 per endpoint). Kill requested at 15 s; restart requested at 40 s. Percentages and nearest-rank latencies include all responses and network/time-out errors across both routes. Recovery is measured from the restart request to the first successful /users request dispatched afterward; Not observed means no recovery within the round. Background traffic is paused.\n\n${comparison}\n\nPer-run results and action timing (seconds from round start):\n\n\`\`\`json\n${JSON.stringify(state.results, null, 2)}\n\`\`\`\n`);
       } catch (error) { failure = error; }
     }
     state.status = failure ? 'failed' : 'complete';
@@ -152,14 +178,22 @@ function createExperiment({ action, toggle, stopTraffic, startTraffic, trafficOn
   return {
     snapshot,
     running: () => state.status === 'running',
-    start() {
+    start({ kind = 'comparison', resetTimeoutSeconds = 30 } = {}) {
       if (state.status === 'running') throw new Error('Experiment already running');
-      state = { status: 'running', phase: 'Preparing', startedAt: new Date().toISOString(), results: [] };
+      if (!['comparison', 'cooldowns'].includes(kind) || typeof resetTimeoutSeconds !== 'number'
+        || !Number.isFinite(resetTimeoutSeconds) || resetTimeoutSeconds < 1 || resetTimeoutSeconds > 300) {
+        const error = new Error('Cooldown must be a number from 1 to 300 seconds'); error.statusCode = 400; throw error;
+      }
+      const plan = kind === 'cooldowns'
+        ? [1, 2, 3].flatMap(trial => [30, 5].map(cooldown => ({ mode: 'on', resetTimeoutSeconds: cooldown, trial })))
+        : ['on', 'off'].map(mode => ({ mode, resetTimeoutSeconds, trial: 1 }));
+      state = { status: 'running', kind, phase: 'Preparing', totalRounds: plan.length,
+        startedAt: new Date().toISOString(), results: [] };
       stopping = false;
-      task = run().catch(error => { state.status = 'failed'; state.phase = error.message; });
+      task = run(plan).catch(error => { state.status = 'failed'; state.phase = error.message; });
     },
     async stop() { stopping = true; controller?.abort(); await task; },
   };
 }
 
-module.exports = { createExperiment, summarize, table };
+module.exports = { createExperiment, summarize, table, cooldownAverages, cooldownTable };
