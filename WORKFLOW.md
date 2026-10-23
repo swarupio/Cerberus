@@ -49,7 +49,7 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 - [x] Build the dependency-free host server and single-page controls with shared chaos-tool target validation
 - [x] Verify every API endpoint with curl, including protected targets and the user-service kill/status transition
 - [x] Auto-start panel traffic, refresh live counters every second, label service roles, and auto-scale Grafana request-rate/latency panels with millisecond latency
-- [ ] Future: event log (deferred)
+- [x] Event log delivered by the terminal interface in Phase 9
 - [ ] Future: Grafana embed (deferred)
 - [ ] Future: additional failure modes (deferred)
 
@@ -60,6 +60,11 @@ Update this file after every completed task (see AGENTS.md). Check boxes, add a 
 - [x] Add runtime resetTimeoutSeconds (1–300 s) on POST /admin/breaker and experiment controls; verify three ON runs each at 30 s and 5 s and append per-run measurements plus averaged success/p95/recovery
 
 Runtime cooldown API: POST plain `on`/`off` or JSON such as `{"breaker":"on","resetTimeoutSeconds":5}`; omitted settings retain their values. Applying settings resets failures and closes the circuit. The panel can apply a cooldown, use it for ON/OFF runs, or run the six-trial 30/5 comparison; experiments restore the previous mode and cooldown. Comparison averages are arithmetic means of per-run metrics (mean per-run p95, not pooled p95); recovery is measured from the second-40 restart request and is averaged only when every run recovers.
+
+## Phase 9 — Terminal control panel (UI only)
+- [x] Replace cards/buttons with a full-screen monospace terminal, ASCII header, live aligned status/counters, timestamped state-change log, and fixed blinking command prompt
+- [x] Connect help/status/kill/restart/traffic/breaker/experiment/clear commands to existing APIs with verbatim errors, history, Tab completion, and ASCII experiment progress/results
+- [x] Load in Edge, run every command and the real ON/OFF experiment, verify protected-target refusal and desktop/mobile layout, and commit only the HTML and workflow update
 
 ## Notes log
 <!-- Add one line per completed task here, e.g.: -->
@@ -81,3 +86,4 @@ Runtime cooldown API: POST plain `on`/`off` or JSON such as `{"breaker":"on","re
 2026-10-23: Verified Compose build/start, panel auto-traffic/counters/page and start/stop/kill/restart APIs via curl (errors increased during user-service outage; monitoring actions returned 403), 5 CLI tests, and reloaded Grafana auto-scaled panels with millisecond latency and non-zero gateway request rate (1.7975 req/s); user-service restored and traffic left on.
 2026-10-23: Phase 8 verified with Compose build/start, curl ON/OFF=200, invalid body=400, cross-origin/container-peer=403 and concurrent controls=409, 9 tests, and two real 1,200-request rounds saved to experiments/results.md (ON/OFF success 72.33%/80.50%, p95 17.23/3006.71 ms, recovery 8.92/2.08 s); all services running, breaker ON, background traffic restored; no dependencies added.
 2026-10-23: Runtime cooldown and panel controls verified with Compose gateway build/start, 13 tests, curl settings=200/invalid=400/cross-origin and peer=403/locked=409, and six real ON trials (7,200 requests): mean success/p95/recovery at 30 s = 72.33%/16.11 ms/8.91 s, at 5 s = 74.81%/16.58 ms/5.95 s; appended raw trials and independently checked averages against the live API, preserved prior results, and restored breaker ON/30 s plus traffic with both routes HTTP 200; no dependencies added.
+2026-10-23: Terminal HTML verified in Edge with every command, history/Tab, clear after completed results, automatic service/circuit events, and 1280px/390px layouts; kill/restart printed user-service stopped/running, kill prometheus printed the exact Protected target refusal, and experiment run rendered two real 1,200-request ASCII results (ON/OFF success 72.33%/80.17%, p95 19.03/3004.88 ms, recovery 8.92/2.41 s); verification output archived in TEMP, original results.md preserved, APIs/experiment/target rules unchanged, services and traffic restored, no dependencies added.

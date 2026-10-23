@@ -1,149 +1,282 @@
 <!doctype html>
 <html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cerberus Control Panel</title>
+<title>CERBERUS // lab terminal</title>
 <style>
-  :root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; background: #111827; color: #e5e7eb; }
-  body { max-width: 1000px; margin: 4rem auto; padding: 0 1.5rem; }
-  h1 { margin-bottom: .25rem; } p { color: #b9c5d7; }
-  header, .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-  a { color: #93c5fd; } #cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin: 2rem 0; }
-  article { background: #1f2937; border: 1px solid #475569; border-radius: 12px; padding: 1.5rem; }
-  h2 { font-size: 1.15rem; margin-top: 0; } button { font: inherit; cursor: pointer; border: 1px solid #64748b; border-radius: 6px; background: #334155; color: white; padding: .5rem .9rem; margin-right: .4rem; }
-  button[data-action="kill"] { background: #7f1d1d; } button:disabled { opacity: .5; cursor: wait; }
-  .running { color: #86efac; } .stopped { color: #fca5a5; } #message { color: #fca5a5; min-height: 1.5em; }
-  table { width: 100%; border-collapse: collapse; margin: 1rem 0; } th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #475569; }
-  progress { width: 100%; } section { margin-top: 2rem; }
+  :root { color-scheme: dark; font: 14px/1.5 Consolas, monospace; background: #080d09; color: #82ec9b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  header, #monitor { flex: none; padding: .75rem 1.5rem; overflow-x: auto; }
+  header { border-bottom: 1px dashed #285c35; }
+  pre { font: inherit; margin: 0; white-space: pre; }
+  #traffic-state { margin-top: .5rem; }
+  #counters { margin-top: .5rem; white-space: pre; }
+  .warning { color: #ffc56b; } .error { color: #ff7777; }
+  #event-log { flex: 1; min-height: 0; overflow: auto; padding: .75rem 1.5rem 1.5rem; margin-bottom: 3.5rem; border-top: 1px dashed #285c35; scrollbar-color: #285c35 #080d09; }
+  .entry { display: grid; grid-template-columns: 11ch max-content; gap: 1ch; margin-bottom: .5rem; }
+  .timestamp { opacity: .7; white-space: nowrap; }
+  #prompt { position: fixed; inset: auto 0 0; min-height: 3.5rem; padding: 1rem 1.5rem; background: #080d09; border-top: 1px dashed #285c35; display: flex; align-items: center; gap: 1ch; }
+  #prompt label { white-space: nowrap; }
+  #input-wrap { flex: 1; min-width: 0; position: relative; }
+  #command { width: 100%; padding: 0; margin: 0; border: 0; outline: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; caret-color: transparent; }
+  #command:focus-visible { outline: 1px dashed #285c35; outline-offset: 4px; }
+  #cursor { position: absolute; top: .2em; left: 0; width: .6ch; height: 1.1em; background: currentColor; pointer-events: none; animation: blink 1s step-end infinite; }
+  #input-wrap:not(:focus-within) #cursor { opacity: .35; animation: none; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { #cursor { animation: none; } }
+  @media (max-width: 600px) { :root { font-size: 12px; } header, #monitor, #event-log { padding-left: .75rem; padding-right: .75rem; } #prompt { padding-left: .75rem; padding-right: .75rem; } }
 </style>
-<header><div><h1>Cerberus Control Panel</h1><p>Local service controls · refreshes every second</p></div><a href="http://127.0.0.1:3003/d/cerberus-overview/cerberus-overview" target="_blank" rel="noopener">Open Grafana ↗</a></header>
-<main>
-  <div id="cards"></div>
-  <div class="toolbar"><span id="circuit">User-service circuit: unknown</span><button id="traffic" disabled>Start traffic</button></div>
-  <p id="counters">Requests sent: <span id="requestsSent">0</span> · Successes: <span id="successes">0</span> · Errors: <span id="errors">0</span> · Last latency: <span id="lastLatencyMs">—</span> ms</p>
-  <p>Traffic calls /users and /orders once per second. Killed services stay stopped until you restart them.</p>
-  <p id="message" role="status" aria-live="polite"></p>
-  <section aria-labelledby="experiment-title">
-    <h2 id="experiment-title">Run experiment</h2>
-    <p>Two 60-second runs, breaker ON then OFF. 20 requests/s total, split equally between /users and /orders. Kill user-service at 15 seconds; restart at 40 seconds. Other controls and background traffic pause during the experiment.</p>
-    <p><label for="cooldown">Breaker cooldown (seconds, 1–300): </label><input id="cooldown" type="number" min="1" max="300" step="1" value="30" required> <button id="apply-cooldown" disabled>Apply cooldown</button></p>
-    <p>Applying settings closes the circuit and resets consecutive failures. ON/OFF runs use the selected cooldown. The comparison below runs six ON trials: three each at 30 s and 5 s, alternating, and restores your previous settings afterward.</p>
-    <button id="experiment" disabled>Run experiment</button>
-    <button id="compare-cooldowns" disabled>Compare 30 s vs 5 s (3 runs each)</button>
-    <p id="experiment-status" role="status" aria-live="polite">Ready</p>
-    <progress id="experiment-progress" max="60" value="0" aria-label="Current run progress"></progress>
-    <table id="comparison-table"><thead><tr><th>Metric</th><th>Breaker ON</th><th>Breaker OFF</th></tr></thead><tbody id="results"></tbody></table>
-    <table id="cooldown-table" hidden><thead><tr><th>Cooldown (ON)</th><th>Runs</th><th>Mean success %</th><th>Mean run p95 (ms)</th><th>Mean recovery (s)</th></tr></thead><tbody id="cooldown-results"></tbody></table>
-    <p>Cooldown averages are arithmetic means of individual run metrics. Recovery is averaged only when every run has recovered.</p>
-    <p>Latency includes successful and failed requests across both endpoints. Recovery measures the first successful /users response after the restart request. Completed tables are saved to experiments/results.md.</p>
-  </section>
-</main>
+</head>
+<body>
+<header aria-label="CERBERUS lab terminal">
+<pre aria-hidden="true">  ____ _____ ____  ____  _____ ____  _   _ ____
+ / ___| ____|  _ \| __ )| ____|  _ \| | | / ___|
+| |   |  _| | |_) |  _ \|  _| | |_) | | | \___ \
+| |___| |___|  _ &lt;| |_) | |___|  _ &lt;| |_| |___) |
+ \____|_____|_| \_\____/|_____|_| \_\\___/|____/</pre>
+<div id="traffic-state" class="warning">TRAFFIC UNKNOWN // connecting to localhost:4000</div>
+</header>
+<section id="monitor" aria-label="Live service status">
+  <pre id="status">Waiting for /api/status ...</pre>
+  <div id="counters">sent -- | ok -- | err -- | last latency -- ms</div>
+</section>
+<main id="event-log" role="log" aria-label="Timestamped event log" aria-live="polite" aria-relevant="additions"></main>
+<form id="prompt" autocomplete="off">
+  <label for="command">cerberus@lab:~$</label>
+  <div id="input-wrap"><input id="command" type="text" aria-label="Terminal command" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus><span id="cursor" aria-hidden="true"></span></div>
+</form>
 <script>
-  const cards = document.querySelector('#cards');
-  const traffic = document.querySelector('#traffic');
-  const message = document.querySelector('#message');
-  let trafficRunning = false;
-  let busy = false;
-  const labels = {
-    gateway: 'entry point: if it dies, everything is down',
-    'user-service': 'protected by circuit breaker',
-    'order-service': 'independent service',
-  };
-  for (const service of ['gateway', 'user-service', 'order-service']) {
-    const card = document.createElement('article');
-    card.dataset.service = service;
-    card.innerHTML = `<h2>${service}</h2><p>${labels[service]}</p><p class="state">Loading…</p><button data-action="kill" disabled>Kill</button><button data-action="restart" disabled>Restart</button>`;
-    cards.append(card);
+  const log = document.querySelector('#event-log');
+  const input = document.querySelector('#command');
+  const ports = { gateway: 3000, 'user-service': 3001, 'order-service': 3002 };
+  const history = [];
+  let historyIndex = 0;
+  let draft = '';
+  let previousStatus = null;
+  let pollBusy = false;
+  let commandBusy = false;
+  let connectionError = null;
+  let experimentId = null;
+  let progressEntry = null;
+  let resultsEntry = null;
+  let resultSignature = '';
+  let experimentStatus = null;
+
+  function stamp() { return '[' + new Date().toLocaleTimeString('en-GB', { hour12: false }) + ']'; }
+  function atBottom() { return log.scrollHeight - log.scrollTop - log.clientHeight < 40; }
+  function print(text, kind = '') {
+    const follow = atBottom();
+    const entry = document.createElement('div'); entry.className = 'entry ' + kind;
+    const time = document.createElement('span'); time.className = 'timestamp'; time.textContent = stamp();
+    const content = document.createElement('pre'); content.textContent = text;
+    entry.append(time, content); log.append(entry);
+    if (follow) log.scrollTop = log.scrollHeight;
+    return entry;
   }
+  function rewrite(entry, text) {
+    const follow = atBottom();
+    entry.querySelector('pre').textContent = text;
+    entry.querySelector('.timestamp').textContent = stamp();
+    if (follow) log.scrollTop = log.scrollHeight;
+  }
+  function table(headers, rows) {
+    const cells = [headers, ...rows].map(row => row.map(String));
+    const widths = headers.map((_, index) => Math.max(...cells.map(row => row[index].length)));
+    const border = '+' + widths.map(width => '-'.repeat(width + 2)).join('+') + '+';
+    const line = row => '| ' + row.map((cell, index) => cell.padEnd(widths[index])).join(' | ') + ' |';
+    return [border, line(cells[0]), border, ...cells.slice(1).map(line), border].join('\n');
+  }
+  const number = (value, suffix = '') => value == null ? 'Not observed' : Number(value).toFixed(2) + suffix;
+
   async function api(url, method = 'GET', body) {
-    const response = await fetch(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Request failed');
+    const response = await fetch(url, { method, cache: 'no-store',
+      body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(45000) });
+    const raw = await response.text();
+    let data;
+    try { data = JSON.parse(raw); } catch { throw new Error(raw); }
+    if (!response.ok) throw new Error(data.error ?? raw);
     return data;
   }
+
+  function statusTable(data) {
+    return table(['SERVICE', 'STATE', 'PORT', 'CIRCUIT'], data.services.map(({ service, status }) =>
+      [service, (status === 'running' ? '● ' : '○ ') + status, ports[service] ?? '--',
+        service === 'user-service' ? data.circuit.state : '-']));
+  }
+  function redraw(data) {
+    const lines = statusTable(data).split('\n');
+    document.querySelector('#status').replaceChildren(...lines.map((text, index) => {
+      const line = document.createElement('span');
+      const service = data.services[index - 3];
+      line.className = service?.status === 'stopped' ? 'error'
+        : service?.service === 'user-service' && data.circuit.state !== 'closed' ? 'warning' : '';
+      line.textContent = text + '\n'; return line;
+    }));
+    const traffic = document.querySelector('#traffic-state');
+    traffic.textContent = 'TRAFFIC ' + (data.traffic ? 'ON' : 'OFF') + ' // localhost:4000 // status refresh 1s';
+    traffic.className = data.traffic ? '' : 'warning';
+    const stats = data.trafficStats;
+    const counters = document.querySelector('#counters');
+    counters.replaceChildren(document.createTextNode(`sent ${stats.requestsSent} | ok ${stats.successes} | `));
+    const errors = document.createElement('span'); errors.className = stats.errors ? 'error' : '';
+    errors.textContent = `err ${stats.errors}`;
+    counters.append(errors, document.createTextNode(` | last latency ${stats.lastLatencyMs ?? '--'} ms`));
+  }
+  function changes(data) {
+    if (previousStatus) {
+      for (const current of data.services) {
+        const previous = previousStatus.services.find(service => service.service === current.service);
+        if (previous && previous.status !== current.status) print(`${current.service}: ${previous.status} -> ${current.status}`,
+          current.status === 'stopped' ? 'error' : '');
+      }
+      if (previousStatus.circuit.state !== data.circuit.state) print(`user-service circuit: ${previousStatus.circuit.state} -> ${data.circuit.state}`,
+        data.circuit.state === 'closed' ? '' : 'warning');
+      if (previousStatus.traffic !== data.traffic) print('Traffic ' + (data.traffic ? 'ON' : 'OFF'), data.traffic ? '' : 'warning');
+    }
+    previousStatus = data;
+  }
+  function experimentResults(experiment) {
+    if (experiment.kind === 'cooldowns') return table(['COOLDOWN ON', 'RUNS', 'MEAN SUCCESS', 'MEAN p95 ms', 'RECOVERY s'],
+      experiment.averages.map(row => [row.resetTimeoutSeconds + ' s', row.runs,
+        number(row.successPercent, '%'), number(row.p95Ms), number(row.recoverySeconds)]));
+    return table(['METRIC', 'BREAKER ON', 'BREAKER OFF'], [
+      ['Requests', 'requests', ''], ['Success', 'successPercent', '%'], ['Errors', 'errorPercent', '%'],
+      ['p50 latency', 'p50Ms', ' ms'], ['p95 latency', 'p95Ms', ' ms'], ['Users recovery', 'recoverySeconds', ' s'],
+    ].map(([label, key, suffix]) => [label, ...['on', 'off'].map(mode => {
+      const result = experiment.results.find(result => result.mode === mode);
+      return !result ? 'Pending' : key === 'requests' ? String(result.summary[key]) : number(result.summary[key], suffix);
+    })]));
+  }
+  function observeExperiment(experiment) {
+    if (!experiment || experiment.status === 'idle') return;
+    if (experiment.startedAt !== experimentId) {
+      experimentId = experiment.startedAt; progressEntry = null; resultsEntry = null;
+      resultSignature = ''; experimentStatus = null;
+      print('Experiment ' + experiment.startedAt + ' // ' + experiment.totalRounds + ' rounds');
+    }
+    if (experiment.status === 'running') {
+      const text = table(['EXPERIMENT', 'ROUND', 'SECONDS', 'SENT', 'DONE'], [[experiment.phase,
+        `${experiment.roundNumber || 0}/${experiment.totalRounds}`, `${Math.floor(experiment.elapsedSeconds)}/60`,
+        experiment.requestsSent || 0, experiment.completed || 0]]);
+      if (!progressEntry) progressEntry = print(text, 'warning'); else rewrite(progressEntry, text);
+    } else if (progressEntry && experiment.status !== experimentStatus) {
+      rewrite(progressEntry, table(['EXPERIMENT', 'STATE'], [[experiment.phase, experiment.status]]));
+      progressEntry.className = 'entry ' + (experiment.status === 'failed' ? 'error' : '');
+    }
+    const signature = JSON.stringify(experiment.results);
+    if (experiment.results.length && signature !== resultSignature) {
+      const text = experimentResults(experiment);
+      if (!resultsEntry) resultsEntry = print(text); else rewrite(resultsEntry, text);
+      resultSignature = signature;
+    }
+    if (experiment.status !== experimentStatus && experiment.status !== 'running') {
+      print(experiment.phase, experiment.status === 'failed' ? 'error' : '');
+    }
+    experimentStatus = experiment.status;
+  }
+  function acceptStatus(data) { redraw(data); changes(data); observeExperiment(data.experiment); }
   async function refresh() {
+    if (pollBusy) return;
+    pollBusy = true;
     try {
       const data = await api('/api/status');
-      const experiment = data.experiment;
-      const locked = busy || experiment.status === 'running';
-      document.querySelector('#experiment').disabled = locked;
-      document.querySelector('#apply-cooldown').disabled = locked;
-      document.querySelector('#compare-cooldowns').disabled = locked;
-      document.querySelector('#cooldown').disabled = locked;
-      document.querySelector('#experiment-status').textContent = experiment.status + ': ' + (experiment.phase || 'Ready')
-        + (experiment.status === 'running' ? ` · round ${experiment.roundNumber || 0} / ${experiment.totalRounds} · ${Math.floor(experiment.elapsedSeconds)} / 60 s · ${experiment.completed || 0} / ${experiment.requestsSent || 0} requests completed` : '');
-      document.querySelector('#comparison-table').hidden = experiment.kind === 'cooldowns';
-      document.querySelector('#cooldown-table').hidden = experiment.kind !== 'cooldowns';
-      document.querySelector('#cooldown-results').replaceChildren(...experiment.averages.map(result => {
-        const row = document.createElement('tr');
-        for (const value of [result.resetTimeoutSeconds + ' s', result.runs,
-          ...['successPercent', 'p95Ms', 'recoverySeconds'].map(key => result[key] == null ? 'Not observed in every run' : result[key].toFixed(2))]) {
-          const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
-        }
-        return row;
-      }));
-      document.querySelector('#experiment-progress').value = experiment.status === 'complete' ? 60 : experiment.elapsedSeconds;
-      const rows = [['Requests', 'requests', ''], ['Success', 'successPercent', '%'], ['Errors', 'errorPercent', '%'],
-        ['p50 latency', 'p50Ms', ' ms'], ['p95 latency', 'p95Ms', ' ms'], ['/users recovery', 'recoverySeconds', ' s']];
-      document.querySelector('#results').replaceChildren(...rows.map(([label, key, suffix]) => {
-        const row = document.createElement('tr');
-        for (const value of [label, ...['on', 'off'].map(mode => {
-          const result = experiment.results.find(result => result.mode === mode);
-          if (!result) return '—';
-          const value = result.summary[key];
-          return value == null ? 'Not observed' : Number(value).toFixed(2) + suffix;
-        })]) {
-          const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
-        }
-        return row;
-      }));
-      for (const { service, status } of data.services) {
-        const card = [...cards.children].find(card => card.dataset.service === service);
-        const state = card.querySelector('.state');
-        state.textContent = status;
-        state.className = 'state ' + status;
-        for (const button of card.querySelectorAll('button')) button.disabled = locked || (button.dataset.action === 'kill' && status !== 'running');
-      }
-      document.querySelector('#circuit').textContent = 'User-service circuit: ' + data.circuit.state;
-      trafficRunning = data.traffic;
-      for (const key of ['requestsSent', 'successes', 'errors', 'lastLatencyMs']) {
-        document.getElementById(key).textContent = data.trafficStats[key] ?? '—';
-      }
-      traffic.textContent = trafficRunning ? 'Stop traffic' : 'Start traffic';
-      traffic.disabled = locked;
+      if (connectionError !== null) print('Status connection restored');
+      connectionError = null; acceptStatus(data);
     } catch (error) {
-      message.textContent = error.message;
-      for (const card of cards.children) {
-        card.querySelector('.state').textContent = 'Unknown — status unavailable';
-        card.querySelector('.state').className = 'state';
-      }
-      document.querySelector('#circuit').textContent = 'User-service circuit: unknown';
-      document.querySelectorAll('button').forEach(button => { button.disabled = true; });
+      if (connectionError !== error.message) print(error.message, 'error');
+      connectionError = error.message;
+      document.querySelector('#traffic-state').textContent = 'TRAFFIC UNKNOWN // status unavailable';
+      document.querySelector('#traffic-state').className = 'error';
+      document.querySelector('#status').textContent = 'Service and circuit states unknown; /api/status unavailable.';
+      document.querySelector('#counters').textContent = 'sent -- | ok -- | err -- | last latency -- ms';
+    } finally { pollBusy = false; }
+  }
+
+  const help = `help                  show commands
+status                fetch and print current service status
+kill <service>        kill a service; it stays stopped
+restart <service>     restart a service
+traffic on|off        start or stop background traffic
+breaker on|off        change runtime breaker mode
+experiment run        two 60s runs: ON then OFF, 20 req/s total
+                      kill users at 15s, restart at 40s
+clear                 clear the event log
+Up/Down               command history; Tab completes commands/services
+Grafana               http://127.0.0.1:3003/d/cerberus-overview/cerberus-overview`;
+  async function execute(command) {
+    const parts = command.trim().split(/\s+/);
+    const [verb, argument] = parts;
+    if (verb === 'clear' && parts.length === 1) {
+      log.replaceChildren(); progressEntry = null; resultsEntry = null;
+      return;
     }
+    if (verb === 'help' && parts.length === 1) { print(help); return; }
+    if (verb === 'status' && parts.length === 1) {
+      const data = await api('/api/status'); acceptStatus(data);
+      print(statusTable(data) + `\nsent ${data.trafficStats.requestsSent} | ok ${data.trafficStats.successes} | err ${data.trafficStats.errors} | last latency ${data.trafficStats.lastLatencyMs ?? '--'} ms`);
+      return;
+    }
+    let data;
+    if (['kill', 'restart'].includes(verb) && parts.length === 2) {
+      data = await api(`/api/${verb}/${encodeURIComponent(argument)}`, 'POST');
+      print(`${data.service}: ${data.status}`, data.status === 'stopped' ? 'warning' : '');
+    } else if (verb === 'traffic' && parts.length === 2 && ['on', 'off'].includes(argument)) {
+      data = await api('/api/traffic/' + (argument === 'on' ? 'start' : 'stop'), 'POST');
+      print('Traffic ' + (data.traffic ? 'ON' : 'OFF'), data.traffic ? '' : 'warning');
+    } else if (verb === 'breaker' && parts.length === 2 && ['on', 'off'].includes(argument)) {
+      data = await api('/api/breaker', 'POST', { breaker: argument });
+      print(`Breaker ${data.breaker.toUpperCase()} // cooldown ${data.resetTimeoutSeconds} s`, data.breaker === 'off' ? 'warning' : '');
+    } else if (verb === 'experiment' && argument === 'run' && parts.length === 2) {
+      data = await api('/api/experiment/start', 'POST');
+      print('Experiment accepted // ON then OFF // results follow live', 'warning');
+      observeExperiment(data);
+    } else { print('Unknown command or arguments. Type help.', 'warning'); return; }
+    await refresh();
   }
-  async function act(url, body) {
-    busy = true;
-    message.textContent = '';
-    document.querySelectorAll('button').forEach(button => { button.disabled = true; });
-    try {
-      const result = await api(url, 'POST', body);
-      if (url === '/api/breaker') message.textContent = `Breaker ${result.breaker.toUpperCase()} · cooldown ${result.resetTimeoutSeconds} s`;
-    } catch (error) { message.textContent = error.message; }
-    finally { busy = false; await refresh(); }
+  function cursor() {
+    const position = input.selectionStart ?? input.value.length;
+    document.querySelector('#cursor').style.left = `calc(${position}ch - ${input.scrollLeft}px)`;
   }
-  cards.addEventListener('click', event => {
-    const button = event.target.closest('button');
-    if (button) void act('/api/' + button.dataset.action + '/' + button.closest('article').dataset.service);
+  function setInput(value) { input.value = value; input.setSelectionRange(value.length, value.length); cursor(); }
+  document.querySelector('#prompt').addEventListener('submit', async event => {
+    event.preventDefault();
+    const command = input.value.trim();
+    if (!command || commandBusy) return;
+    history.push(command); historyIndex = history.length; draft = ''; setInput('');
+    print('cerberus@lab:~$ ' + command);
+    commandBusy = true; input.readOnly = true;
+    try { await execute(command); } catch (error) { print(error.message, 'error'); }
+    finally { commandBusy = false; input.readOnly = false; input.focus(); cursor(); }
   });
-  traffic.addEventListener('click', () => void act('/api/traffic/' + (trafficRunning ? 'stop' : 'start')));
-  function withCooldown(url) {
-    const input = document.querySelector('#cooldown');
-    if (input.reportValidity()) void act(url, { resetTimeoutSeconds: Number(input.value) });
-  }
-  document.querySelector('#experiment').addEventListener('click', () => withCooldown('/api/experiment/start'));
-  document.querySelector('#apply-cooldown').addEventListener('click', () => withCooldown('/api/breaker'));
-  document.querySelector('#compare-cooldowns').addEventListener('click', () => void act('/api/experiment/cooldowns'));
-  void refresh();
-  setInterval(refresh, 1000);
+  const commands = ['help', 'status', 'kill', 'restart', 'traffic', 'breaker', 'experiment', 'clear'];
+  const services = ['gateway', 'user-service', 'order-service', 'prometheus', 'grafana'];
+  input.addEventListener('keydown', event => {
+    if (commandBusy) return;
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (historyIndex === history.length) draft = input.value;
+      historyIndex = Math.max(0, Math.min(history.length, historyIndex + (event.key === 'ArrowUp' ? -1 : 1)));
+      setInput(historyIndex === history.length ? draft : history[historyIndex]);
+    } else if (event.key === 'Tab') {
+      event.preventDefault();
+      const before = input.value.slice(0, input.selectionStart);
+      const tokens = before.trimStart().split(/\s+/);
+      const prefix = tokens[tokens.length - 1];
+      const choices = tokens.length === 1 ? commands : tokens.length === 2
+        ? ['kill', 'restart'].includes(tokens[0]) ? services
+          : ['traffic', 'breaker'].includes(tokens[0]) ? ['on', 'off'] : tokens[0] === 'experiment' ? ['run'] : [] : [];
+      const matches = choices.filter(choice => choice.startsWith(prefix));
+      if (matches.length === 1) {
+        const rest = input.value.slice(input.selectionEnd);
+        setInput(before.slice(0, before.length - prefix.length) + matches[0] + (rest || ' '));
+      } else if (matches.length > 1) print(matches.join('  '));
+    }
+  });
+  for (const event of ['input', 'keyup', 'click', 'scroll', 'select']) input.addEventListener(event, cursor);
+  print('CERBERUS local lab ready. Type help.');
+  void refresh(); setInterval(refresh, 1000); input.focus();
 </script>
+</body>
 </html>
