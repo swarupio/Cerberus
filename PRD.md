@@ -88,3 +88,7 @@ Fill in once roles are assigned (see WORKFLOW.md for suggested split):
 - user-service:
 - order-service:
 - Observability (Prometheus/Grafana) + chaos-tool:
+
+## 10. Control Panel
+
+A host-only Node.js control panel runs with `node control-panel/server.js` on localhost:4000 using built-in modules only. One plain HTML/CSS/JS page polls every two seconds for the three application containers' running/stopped status and the gateway's circuit metric, offers Kill (without automatic restart) and Restart controls, toggles traffic to `/users` and `/orders` once per second, and links to Grafana. Target validation is imported from `chaos-tool/cli.js`; Prometheus and Grafana remain protected. This adds no Compose service. Event logs, embedded Grafana, and additional failure modes are deferred.
